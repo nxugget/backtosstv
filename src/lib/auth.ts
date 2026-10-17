@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { redirect } from "next/navigation";
 
 import { toAdminPasskey, type AdminPasskey } from "@/lib/passkeys";
@@ -11,7 +13,7 @@ interface AdminSession {
   userId: string;
 }
 
-export async function getAdminSession(): Promise<AdminSession | null> {
+export const getAdminSession = cache(async (): Promise<AdminSession | null> => {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase.auth.getUser();
@@ -36,7 +38,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     supabase,
     userId: data.user.id,
   };
-}
+});
 
 export async function requireAdminSession(): Promise<AdminSession> {
   const session = await getAdminSession();
