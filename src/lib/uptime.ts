@@ -21,6 +21,9 @@ const ENDPOINT = "https://api.uptimerobot.com/v2/getMonitors";
 /** Enough for a service that answers in milliseconds, short enough not to hold the page hostage. */
 const TIMEOUT_MS = 8000;
 
+/** How long the page keeps one read before asking again. Matches the page's `revalidate`. */
+const REVALIDATE_SECONDS = 300;
+
 /** The windows the page shows. UptimeRobot takes them as days, in one string. */
 const RATIO_DAYS = [1, 7, 30] as const;
 
@@ -84,8 +87,13 @@ interface Payload {
   stat?: string;
 }
 
+/** The Next.js server fetch, extended with the options its caching understands. */
+type NextFetchInit = RequestInit & {
+  next?: { revalidate?: number | false; tags?: string[] };
+};
+
 /** Injected in tests, like the rate limiter's. */
-export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
+export type FetchLike = (input: string, init: NextFetchInit) => Promise<Response>;
 
 export async function readUptime(fetchImpl: FetchLike = fetch): Promise<UptimeReport> {
   const key = process.env.UPTIMEROBOT_API_KEY;
@@ -104,7 +112,8 @@ export async function readUptime(fetchImpl: FetchLike = fetch): Promise<UptimeRe
         response_times: "1",
         response_times_limit: "1",
       }),
-      cache: "no-store",
+      cache: "force-cache",
+      next: { revalidate: REVALIDATE_SECONDS },
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
       signal: AbortSignal.timeout(TIMEOUT_MS),
