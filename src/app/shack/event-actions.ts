@@ -437,16 +437,16 @@ async function uploadImage(
 }
 
 /**
- * Every event image is resized to the same 16:9 frame and re-encoded as JPEG before it reaches the
- * bucket. Uniform images are what keeps the home panel and every client that reads the API from
- * having to crop a different shape for every event.
+ * Every event image is shrunk to fit inside a 1280x720 frame and re-encoded as JPEG before it
+ * reaches the bucket. The whole image is kept: its aspect ratio is preserved, so nothing is
+ * cropped off the sides, top, or bottom.
  */
 async function standardizeImage(file: File): Promise<Outcome<Buffer>> {
   try {
     const bytes = Buffer.from(await file.arrayBuffer());
     const buffer = await sharp(bytes)
       .rotate()
-      .resize(1280, 720, { fit: "cover" })
+      .resize(1280, 720, { fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 85, mozjpeg: true })
       .toBuffer();
 
