@@ -26,12 +26,20 @@ export default async function Home() {
 
         <p className="text-xl text-signal sm:text-2xl">The open API for every SSTV pass.</p>
 
-        <a
-          className="mb-4 mt-2 inline-flex items-center justify-center rounded-lg bg-signal px-6 py-3 text-sm font-semibold text-void transition-colors hover:bg-signal-bright"
-          href="/api-reference"
-        >
-          Start with the API
-        </a>
+        <div className="mb-4 mt-2 flex flex-wrap items-center justify-center gap-3">
+          <a
+            className="inline-flex items-center justify-center rounded-lg bg-signal px-6 py-3 text-sm font-semibold text-void transition-colors hover:bg-signal-bright"
+            href="/api-reference"
+          >
+            Start with the API
+          </a>
+          <a
+            className="inline-flex items-center justify-center rounded-lg border border-signal px-6 py-3 text-sm font-semibold text-signal transition-colors hover:bg-signal hover:text-void"
+            href="/api/v1/events.ics"
+          >
+            Add to calendar
+          </a>
+        </div>
       </div>
 
       <HomeHero
