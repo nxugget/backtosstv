@@ -1,0 +1,2344 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BackToSSTV API",
+    "version": "1.12.0",
+    "summary": "Slow scan television transmissions from amateur satellites.",
+    "description": "BackToSSTV tracks slow scan television transmissions from amateur satellites. Every event in this catalogue was entered and verified by hand from an announcement, which is why `source_url` is part of the payload.\n\n**Attribution is required.** The data is published under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/): you may use it, including commercially, provided you credit BackToSSTV and link back to it. Every response repeats the terms in its `license` object and in a `Link: <...>; rel=\"license\"` header, so there is no need to go looking for them. The source code is separately licensed under the MIT licence, which governs the software and not the data.\n\nAll timestamps are UTC and are serialised with a `Z` suffix. No authentication, no API key, and CORS is open, so a page or an app can call this directly from the browser.\n\n**Identify yourself.** Send a `User-Agent` naming your application and a way to reach you, such as `AllmySat/2.3.0 (+https://allmysat.com)`. There is no key and nothing to register, so that header is the only thing that lets us warn you if something you built starts misbehaving, instead of blocking an address and hoping you notice. A browser cannot set it, because it is a forbidden header name there, and no page is expected to.\n\n**Request budget.** There is a per-caller limit, generous enough that a client following the caching advice below will not meet it. Every response reports it in `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`, and going over answers `429` with `Retry-After`. Responses served from the cache do not count against it.\n\n**Caching and synchronisation.** Responses carry `ETag` and `Last-Modified`; send them back as `If-None-Match` to get a `304` instead of a payload. To stay in step without refetching the catalogue, keep the largest `updated_at` you have seen and pass it as `since`. An event that is called off keeps its row and gains a `cancelled_at`, so a client that cached it learns of the cancellation; a row that disappears entirely was an entry made in error.",
+    "license": {
+      "name": "CC BY 4.0",
+      "identifier": "CC-BY-4.0"
+    },
+    "contact": {
+      "name": "BackToSSTV",
+      "url": "https://github.com/nxugget/backtosstv"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The host serving this document."
+    }
+  ],
+  "tags": [
+    {
+      "name": "Events",
+      "description": "SSTV transmissions, scheduled or past."
+    },
+    {
+      "name": "Satellites",
+      "description": "The satellites events are attached to."
+    },
+    {
+      "name": "Operators",
+      "description": "Who runs the transmissions."
+    },
+    {
+      "name": "Meta",
+      "description": "What the API offers."
+    }
+  ],
+  "paths": {
+    "/api/v1": {
+      "get": {
+        "operationId": "getIndex",
+        "summary": "Discover the API",
+        "description": "Names the endpoints, the documentation and the licence, so a client can start from the root of the API rather than from this document.",
+        "tags": ["Meta"],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "What this API offers",
+            "source": "curl https://backtosstv.org/api/v1"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The endpoints this version offers.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Index"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "listEvents",
+        "summary": "List SSTV events",
+        "description": "Returns a page of events, each with the satellite that transmits it.\n\n`status` is evaluated against the server clock rather than stored: `upcoming` has not started, `live` has started and not ended, `past` has ended. Results are ordered by `start_time`: ascending, except `past`, which is descending so the most recent comes first. Events sharing a `start_time` are ordered by `id`, which makes paging stable.\n\n`count` is the total matching the filters, independent of `limit` and `offset`. An `offset` past the end returns an empty `results` array with the full `count`.\n\nCancelled events are included unless `cancelled=false` is passed, since a client that cached one needs to see that it was called off.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Time window relative to the current server time. It defaults to `upcoming`, so pass `all` when synchronising with `since`: otherwise a live or past event that was corrected or called off is filtered out of the very answer you are polling for.",
+            "schema": {
+              "type": "string",
+              "enum": ["upcoming", "live", "past", "all"],
+              "default": "upcoming"
+            }
+          },
+          {
+            "name": "norad_id",
+            "in": "query",
+            "required": false,
+            "description": "Only events transmitted by this satellite.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "example": 25544
+          },
+          {
+            "name": "cancelled",
+            "in": "query",
+            "required": false,
+            "description": "`true` for cancelled events only, `false` to exclude them. Omitted returns both.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/operator"
+          },
+          {
+            "$ref": "#/components/parameters/mode"
+          },
+          {
+            "$ref": "#/components/parameters/startAfter"
+          },
+          {
+            "$ref": "#/components/parameters/startBefore"
+          },
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Everything coming up",
+            "source": "curl https://backtosstv.org/api/v1/events"
+          },
+          {
+            "lang": "curl",
+            "label": "One satellite",
+            "source": "curl 'https://backtosstv.org/api/v1/events?norad_id=25544'"
+          },
+          {
+            "lang": "curl",
+            "label": "One operator, one mode",
+            "source": "curl 'https://backtosstv.org/api/v1/events?operator=ariss&mode=PD120'"
+          },
+          {
+            "lang": "curl",
+            "label": "The next week",
+            "source": "curl 'https://backtosstv.org/api/v1/events?status=upcoming&start_before=2026-09-21T00:00:00Z'"
+          },
+          {
+            "lang": "curl",
+            "label": "Synchronise what changed",
+            "source": "curl 'https://backtosstv.org/api/v1/events?status=all&since=2026-09-14T09:12:00Z'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of events plus the total number matching the filters.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                },
+                "examples": {
+                  "upcoming": {
+                    "summary": "Events that have not started yet",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-14T09:12:00.000Z",
+                          "end_time": "2026-09-14T09:24:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": 10,
+                          "title": "ARISS SSTV activity",
+                          "image_url": null,
+                          "image_interval_seconds": 120,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": null,
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-13T18:00:00.000Z"
+                        }
+                      ]
+                    }
+                  },
+                  "cancelled": {
+                    "summary": "An event that was called off but stays in the catalogue",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-20T19:00:00.000Z",
+                          "end_time": "2026-09-20T19:30:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": null,
+                          "title": null,
+                          "image_url": null,
+                          "image_interval_seconds": null,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": "2026-09-19T08:30:00.000Z",
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-19T08:30:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events/live": {
+      "get": {
+        "operationId": "listLiveEvents",
+        "summary": "Events transmitting now",
+        "description": "`/api/v1/events?status=live`, under the path a reader guesses first. The window is evaluated against the server clock on every request (an event has started and not ended), so nothing is stored and nothing goes stale. Every other parameter of the list endpoint applies; a `status` parameter is ignored, because the path already sets it.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "name": "norad_id",
+            "in": "query",
+            "required": false,
+            "description": "Only events transmitted by this satellite.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "example": 25544
+          },
+          {
+            "name": "cancelled",
+            "in": "query",
+            "required": false,
+            "description": "`true` for cancelled events only, `false` to exclude them. Omitted returns both.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/operator"
+          },
+          {
+            "$ref": "#/components/parameters/mode"
+          },
+          {
+            "$ref": "#/components/parameters/startAfter"
+          },
+          {
+            "$ref": "#/components/parameters/startBefore"
+          },
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Transmitting now",
+            "source": "curl https://backtosstv.org/api/v1/events/live"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of events plus the total number matching the filters.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                },
+                "examples": {
+                  "upcoming": {
+                    "summary": "Events that have not started yet",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-14T09:12:00.000Z",
+                          "end_time": "2026-09-14T09:24:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": 10,
+                          "title": "ARISS SSTV activity",
+                          "image_url": null,
+                          "image_interval_seconds": 120,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": null,
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-13T18:00:00.000Z"
+                        }
+                      ]
+                    }
+                  },
+                  "cancelled": {
+                    "summary": "An event that was called off but stays in the catalogue",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-20T19:00:00.000Z",
+                          "end_time": "2026-09-20T19:30:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": null,
+                          "title": null,
+                          "image_url": null,
+                          "image_interval_seconds": null,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": "2026-09-19T08:30:00.000Z",
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-19T08:30:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events/upcoming": {
+      "get": {
+        "operationId": "listUpcomingEvents",
+        "summary": "Events not yet started",
+        "description": "`/api/v1/events?status=upcoming`, under the path a reader guesses first. The window is evaluated against the server clock on every request (an event has not started), so nothing is stored and nothing goes stale. Every other parameter of the list endpoint applies; a `status` parameter is ignored, because the path already sets it.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "name": "norad_id",
+            "in": "query",
+            "required": false,
+            "description": "Only events transmitted by this satellite.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "example": 25544
+          },
+          {
+            "name": "cancelled",
+            "in": "query",
+            "required": false,
+            "description": "`true` for cancelled events only, `false` to exclude them. Omitted returns both.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/operator"
+          },
+          {
+            "$ref": "#/components/parameters/mode"
+          },
+          {
+            "$ref": "#/components/parameters/startAfter"
+          },
+          {
+            "$ref": "#/components/parameters/startBefore"
+          },
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Not started yet",
+            "source": "curl https://backtosstv.org/api/v1/events/upcoming"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of events plus the total number matching the filters.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                },
+                "examples": {
+                  "upcoming": {
+                    "summary": "Events that have not started yet",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-14T09:12:00.000Z",
+                          "end_time": "2026-09-14T09:24:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": 10,
+                          "title": "ARISS SSTV activity",
+                          "image_url": null,
+                          "image_interval_seconds": 120,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": null,
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-13T18:00:00.000Z"
+                        }
+                      ]
+                    }
+                  },
+                  "cancelled": {
+                    "summary": "An event that was called off but stays in the catalogue",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-20T19:00:00.000Z",
+                          "end_time": "2026-09-20T19:30:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": null,
+                          "title": null,
+                          "image_url": null,
+                          "image_interval_seconds": null,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": "2026-09-19T08:30:00.000Z",
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-19T08:30:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events/past": {
+      "get": {
+        "operationId": "listPastEvents",
+        "summary": "Events already finished",
+        "description": "`/api/v1/events?status=past`, under the path a reader guesses first. The window is evaluated against the server clock on every request (an event has ended, most recent first), so nothing is stored and nothing goes stale. Every other parameter of the list endpoint applies; a `status` parameter is ignored, because the path already sets it.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "name": "norad_id",
+            "in": "query",
+            "required": false,
+            "description": "Only events transmitted by this satellite.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "example": 25544
+          },
+          {
+            "name": "cancelled",
+            "in": "query",
+            "required": false,
+            "description": "`true` for cancelled events only, `false` to exclude them. Omitted returns both.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/operator"
+          },
+          {
+            "$ref": "#/components/parameters/mode"
+          },
+          {
+            "$ref": "#/components/parameters/startAfter"
+          },
+          {
+            "$ref": "#/components/parameters/startBefore"
+          },
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Already finished",
+            "source": "curl https://backtosstv.org/api/v1/events/past"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of events plus the total number matching the filters.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventList"
+                },
+                "examples": {
+                  "upcoming": {
+                    "summary": "Events that have not started yet",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-14T09:12:00.000Z",
+                          "end_time": "2026-09-14T09:24:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": 10,
+                          "title": "ARISS SSTV activity",
+                          "image_url": null,
+                          "image_interval_seconds": 120,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": null,
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-13T18:00:00.000Z"
+                        }
+                      ]
+                    }
+                  },
+                  "cancelled": {
+                    "summary": "An event that was called off but stays in the catalogue",
+                    "value": {
+                      "count": 1,
+                      "limit": 20,
+                      "offset": 0,
+                      "next": null,
+                      "previous": null,
+                      "license": {
+                        "name": "CC BY 4.0",
+                        "url": "https://creativecommons.org/licenses/by/4.0/",
+                        "attribution": "SSTV event data from BackToSSTV, licensed CC BY 4.0"
+                      },
+                      "results": [
+                        {
+                          "id": "6c7d8e9f-0a1b-4c2d-9e3f-4a5b6c7d8e9f",
+                          "satellite": {
+                            "norad_id": 25544,
+                            "name": "ISS",
+                            "alternate_name": "ZARYA"
+                          },
+                          "start_time": "2026-09-20T19:00:00.000Z",
+                          "end_time": "2026-09-20T19:30:00.000Z",
+                          "frequency_mhz": 145.8,
+                          "mode": "PD120",
+                          "transmit_power_watts": null,
+                          "title": null,
+                          "image_url": null,
+                          "image_interval_seconds": null,
+                          "source_url": "https://www.ariss.org/",
+                          "cancelled_at": "2026-09-19T08:30:00.000Z",
+                          "created_at": "2026-09-13T18:00:00.000Z",
+                          "updated_at": "2026-09-19T08:30:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events/{id}": {
+      "get": {
+        "operationId": "getEvent",
+        "summary": "Read one SSTV event",
+        "description": "Refreshes a single event without refetching the catalogue, for a client that stored its `id`.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The event's `id`, as returned by the list endpoint.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Refresh one event",
+            "source": "curl https://backtosstv.org/api/v1/events/0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventResource"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events.ics": {
+      "get": {
+        "operationId": "getCalendar",
+        "summary": "Subscribe in a calendar",
+        "description": "The transmissions as an iCalendar feed (RFC 5545), for a calendar application to subscribe to. Paste the URL into Google Calendar, Apple Calendar, Outlook or Thunderbird and the next pass arrives with a reminder.\n\nEvery filter `/events` takes works here, so `?norad_id=25544` is a calendar of the ISS and `?operator=ariss` one of ARISS's series.\n\nWithout `status` or `start_after`, the feed carries everything from 30 days ago onwards, which is what a subscription wants; pass them for anything else, and `?status=all&start_after=2020-01-01T00:00:00Z` for the whole archive. At most 500 events, since a client refetches the file whole and will not page.\n\nA cancelled transmission keeps its entry with `STATUS:CANCELLED`, which clients strike through or hide on their own, and `UID` is the event's `id`, so a refetch updates an entry rather than adding a second one beside it.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/operator"
+          },
+          {
+            "$ref": "#/components/parameters/mode"
+          },
+          {
+            "$ref": "#/components/parameters/startAfter"
+          },
+          {
+            "$ref": "#/components/parameters/startBefore"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Subscribe to everything",
+            "source": "curl https://backtosstv.org/api/v1/events.ics"
+          },
+          {
+            "lang": "curl",
+            "label": "A calendar of the ISS alone",
+            "source": "curl 'https://backtosstv.org/api/v1/events.ics?norad_id=25544'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The calendar.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string",
+                  "description": "An iCalendar object, one VEVENT per transmission."
+                },
+                "example": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//BackToSSTV//API v1//EN\r\nBEGIN:VEVENT\r\nUID:0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f@backtosstv.org\r\nDTSTART:20260914T091200Z\r\nDTEND:20260914T092400Z\r\nSUMMARY:ISS (ZARYA) · PD120 · 145.800 MHz\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/deletions": {
+      "get": {
+        "operationId": "listDeletions",
+        "summary": "List deletions",
+        "description": "Events that no longer exist, oldest deletion first. `?since=` reports everything that changed, except the change that removes the row it would have reported on: an event entered in error is deleted outright, and this is how a client that cached it finds out. An event that was called off is not here: it keeps its row and gains `cancelled_at`.\n\nSynchronising is therefore two requests: `/events?status=all&since=` for what changed, and this for what is gone. Tombstones are kept for at least 180 days; a client that has been away longer should refetch the catalogue instead of trusting this feed.",
+        "tags": ["Events"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "What is gone",
+            "source": "curl https://backtosstv.org/api/v1/deletions"
+          },
+          {
+            "lang": "curl",
+            "label": "Since your last sync",
+            "source": "curl 'https://backtosstv.org/api/v1/deletions?since=2026-09-14T09:12:00Z'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of deletions.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionList"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/satellites": {
+      "get": {
+        "operationId": "listSatellites",
+        "summary": "List satellites",
+        "description": "The satellites events are attached to, ordered by name. A client can resolve a NORAD number without carrying its own table.",
+        "tags": ["Satellites"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Every satellite",
+            "source": "curl https://backtosstv.org/api/v1/satellites"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of satellites.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SatelliteList"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/satellites/{norad_id}": {
+      "get": {
+        "operationId": "getSatellite",
+        "summary": "Read one satellite",
+        "tags": ["Satellites"],
+        "parameters": [
+          {
+            "name": "norad_id",
+            "in": "path",
+            "required": true,
+            "description": "NORAD catalogue number.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999
+            },
+            "example": 25544
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Resolve a NORAD number",
+            "source": "curl https://backtosstv.org/api/v1/satellites/25544"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The satellite.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SatelliteResource"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/operators": {
+      "get": {
+        "operationId": "listOperators",
+        "summary": "List operators",
+        "description": "The organisations behind the transmissions, ordered by name. Every event names its own; this is the other direction, and what makes a `slug` resolvable without one.",
+        "tags": ["Operators"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/since"
+          },
+          {
+            "$ref": "#/components/parameters/limit"
+          },
+          {
+            "$ref": "#/components/parameters/offset"
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Every operator",
+            "source": "curl https://backtosstv.org/api/v1/operators"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of operators.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorList"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/operators/{slug}": {
+      "get": {
+        "operationId": "getOperator",
+        "summary": "Get one operator",
+        "description": "One operator, by the slug the events carry.",
+        "tags": ["Operators"],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "The operator's `slug`, as an event reports it.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/ifNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Resolve a slug",
+            "source": "curl https://backtosstv.org/api/v1/operators/ariss"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The operator.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorResource"
+                }
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/dump.ndjson": {
+      "get": {
+        "operationId": "getDump",
+        "summary": "Download the whole catalogue",
+        "description": "Every operator, satellite and event in one line-delimited JSON file: one JSON object per line, each with a `type`, so it can be read as a stream rather than held in memory.\n\nUse it instead of paging the list endpoints to read everything. Paging costs an exact `COUNT` per page and spends a request budget meant for clients asking about transmissions; this answers once and the shared cache keeps it for an hour.\n\nThe order is operators, then satellites, then events, so an event's `operator.slug` and `satellite.norad_id` have already been seen in full by the time it arrives. The first line is a manifest carrying `generated_at`, the licence and the two URLs to synchronise with. The last line is `{\"type\":\"end\"}` with the record counts: once a stream has begun, a failure cannot change the status code, so a reader that does not see that line has half a dump.\n\nIt is a snapshot, not a subscription. Carry `generated_at` into `?since=` on `/events` and on `/deletions` to stay current. `HEAD` answers the headers without reading the catalogue, and `If-Modified-Since` answers `304` when nothing has moved.",
+        "tags": ["Meta"],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ifModifiedSince"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "The whole catalogue",
+            "source": "curl https://backtosstv.org/api/v1/dump.ndjson"
+          },
+          {
+            "lang": "curl",
+            "label": "Only the events in it",
+            "source": "curl -s https://backtosstv.org/api/v1/dump.ndjson | jq -c 'select(.type == \"event\")'"
+          },
+          {
+            "lang": "curl",
+            "label": "Has it changed?",
+            "source": "curl -I https://backtosstv.org/api/v1/dump.ndjson"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalogue, as line-delimited JSON.",
+            "headers": {
+              "Last-Modified": {
+                "$ref": "#/components/headers/LastModified"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "RateLimit-Limit": {
+                "$ref": "#/components/headers/RateLimitLimit"
+              },
+              "RateLimit-Remaining": {
+                "$ref": "#/components/headers/RateLimitRemaining"
+              },
+              "RateLimit-Reset": {
+                "$ref": "#/components/headers/RateLimitReset"
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string",
+                  "description": "One JSON object per line. A `manifest` line, then `operator`, `satellite` and `event` records, each the same shape the matching endpoint serves with a `type` added, then an `end` line with the counts."
+                },
+                "example": "{\"type\":\"manifest\",\"generated_at\":\"2026-09-14T09:00:00.000Z\",\"api_version\":\"v1\"}\n{\"type\":\"operator\",\"slug\":\"ariss\",\"name\":\"ARISS\"}\n{\"type\":\"satellite\",\"norad_id\":25544,\"name\":\"ISS\"}\n{\"type\":\"event\",\"id\":\"0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f\",\"mode\":\"PD120\"}\n{\"type\":\"end\",\"counts\":{\"event\":1,\"operator\":1,\"satellite\":1}}"
+              }
+            }
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Is the API answering?",
+        "description": "For whatever is watching this deployment. `200` with `status: ok` when the catalogue answered, `503` with `status: unavailable` when it did not, so a monitor can key on the status code alone.\n\n**Point a monitor at this path, not at a versioned one.** It is outside `/api/v1` on purpose: a monitoring URL has to outlive an API version, and `v1` is meant to be joined by a `v2` one day. `/api/v1/health` answers exactly the same thing, for anyone who finds it in that version's index.\n\nOutside the request budget, on purpose: a monitor told `429` would report an outage that is not happening. A healthy answer is cacheable for five seconds, which is what absorbs a flood; a failing one is never cached, so a recovery shows on the next request.\n\nIt is operational, not part of the data contract: unlike everything else here, its shape may change without a new version.",
+        "tags": ["Meta"],
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "Check it",
+            "source": "curl https://backtosstv.org/api/health"
+          },
+          {
+            "lang": "curl",
+            "label": "Status code only",
+            "source": "curl -I https://backtosstv.org/api/health"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalogue answered.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The catalogue did not answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Rows per page.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "offset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Rows to skip before collecting the page. Prefer following `next`.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "since": {
+        "name": "since",
+        "in": "query",
+        "required": false,
+        "description": "Only rows whose `updated_at` is at or after this instant. Pass the largest `updated_at` you hold to synchronise incrementally. ISO 8601: a date on its own is midnight UTC, and a time without a zone is read as UTC. Anything else is a `400`, rather than a guess at what you meant. Pair it with `status=all`.",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "example": "2026-09-14T09:12:00Z"
+      },
+      "operator": {
+        "name": "operator",
+        "in": "query",
+        "required": false,
+        "description": "Only events run by this operator, by `slug`. An unknown slug is an empty page; something that is not a slug is a `400`.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "example": "ariss"
+      },
+      "mode": {
+        "name": "mode",
+        "in": "query",
+        "required": false,
+        "description": "Only events transmitting in this SSTV mode. The labels are exact, capitals included.",
+        "schema": {
+          "$ref": "#/components/schemas/Mode"
+        },
+        "example": "PD120"
+      },
+      "startAfter": {
+        "name": "start_after",
+        "in": "query",
+        "required": false,
+        "description": "Only events starting at or after this instant. Absolute, where `status` is relative to the server clock, and both apply: `status=upcoming&start_before=...` is \"soon\" without any arithmetic on your side.",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "example": "2026-09-01T00:00:00Z"
+      },
+      "startBefore": {
+        "name": "start_before",
+        "in": "query",
+        "required": false,
+        "description": "Only events starting at or before this instant.",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "example": "2026-09-30T23:59:59Z"
+      },
+      "ifNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "The `ETag` of a response you already hold. The server answers `304` when it still applies.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ifModifiedSince": {
+        "name": "If-Modified-Since",
+        "in": "header",
+        "required": false,
+        "description": "The `Last-Modified` of a response you already hold. The server answers `304` when nothing has changed since. `If-None-Match` is the stronger check and is preferred; this one is honoured for clients that only keep the date.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "headers": {
+      "ETag": {
+        "description": "Validator for this exact response. Send it back as `If-None-Match`.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "LastModified": {
+        "description": "The newest `updated_at` in the response. Absent when the response holds no rows.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Link": {
+        "description": "Points at the data licence, with `rel=\"license\"`.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RateLimitLimit": {
+        "description": "Requests allowed per minute from one caller. Absent when the budget could not be counted for this request, which means no information rather than no limit.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "RateLimitRemaining": {
+        "description": "Requests left in the current window.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "RateLimitReset": {
+        "description": "Seconds until the window resets.",
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "XRequestId": {
+        "description": "The id of this request, matching `error.request_id` in the body. Errors are never cached, so the id belongs to the caller that received it; a successful response is held by the shared cache for everyone and carries no id.",
+        "schema": {
+          "type": "string"
+        },
+        "examples": {
+          "vercel": {
+            "value": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+          }
+        }
+      }
+    },
+    "responses": {
+      "NotModified": {
+        "description": "The response you already hold is still current. No body.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "A parameter is outside its allowed values.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "invalid_status": {
+                "summary": "Unknown status value",
+                "value": {
+                  "error": {
+                    "code": "invalid_status",
+                    "message": "Invalid status. Expected one of: upcoming, live, past, all.",
+                    "parameter": "status",
+                    "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+                  }
+                }
+              },
+              "invalid_limit": {
+                "summary": "Limit outside 1 to 100",
+                "value": {
+                  "error": {
+                    "code": "invalid_limit",
+                    "message": "Invalid limit. Expected an integer between 1 and 100.",
+                    "parameter": "limit",
+                    "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+                  }
+                }
+              },
+              "invalid_since": {
+                "summary": "since is not a date",
+                "value": {
+                  "error": {
+                    "code": "invalid_since",
+                    "message": "Invalid since. Expected an ISO 8601 instant, such as 2026-09-14T09:12:00Z.",
+                    "parameter": "since",
+                    "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/XRequestId"
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Nothing in the catalogue has that identifier.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "not_found",
+                "message": "No event has that id.",
+                "parameter": null,
+                "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+              }
+            }
+          }
+        },
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/XRequestId"
+          }
+        }
+      },
+      "InternalError": {
+        "description": "The catalogue could not be read.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "internal_error",
+                "message": "The catalogue could not be read.",
+                "parameter": null,
+                "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+              }
+            }
+          }
+        },
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/XRequestId"
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "The caller has spent its request budget for the current window. Responses served from the cache never count against it, so honouring `Cache-Control` and sending `If-None-Match` is what keeps a client well clear of this.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retrying.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "RateLimit-Limit": {
+            "$ref": "#/components/headers/RateLimitLimit"
+          },
+          "RateLimit-Remaining": {
+            "$ref": "#/components/headers/RateLimitRemaining"
+          },
+          "RateLimit-Reset": {
+            "$ref": "#/components/headers/RateLimitReset"
+          },
+          "X-Request-Id": {
+            "$ref": "#/components/headers/XRequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "rate_limited",
+                "message": "Too many requests. The budget is 120 per minute; it resets in 24 seconds. Cache the responses and use If-None-Match, which costs nothing against it.",
+                "parameter": null,
+                "request_id": "cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "License": {
+        "type": "object",
+        "description": "The terms the data in this response is published under. Attribution is a condition of use.",
+        "required": ["name", "url", "attribution"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "examples": ["CC BY 4.0"]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "examples": ["https://creativecommons.org/licenses/by/4.0/"]
+          },
+          "attribution": {
+            "type": "string",
+            "description": "Credit to reproduce wherever the data is shown.",
+            "examples": ["SSTV event data from BackToSSTV, licensed CC BY 4.0"]
+          }
+        }
+      },
+      "Satellite": {
+        "type": "object",
+        "required": ["norad_id", "name", "alternate_name", "created_at", "updated_at"],
+        "properties": {
+          "norad_id": {
+            "type": "integer",
+            "description": "NORAD catalogue number, and the satellite's identifier here.",
+            "examples": [25544]
+          },
+          "name": {
+            "type": "string",
+            "examples": ["ISS"]
+          },
+          "alternate_name": {
+            "type": ["string", "null"],
+            "description": "Official name or older designation, null when it has none.",
+            "examples": ["ZARYA"]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Deletion": {
+        "type": "object",
+        "required": ["resource", "id", "deleted_at"],
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "What was deleted. `event` is the only value today; branch on it rather than assuming, because another resource getting tombstones would add a value here.",
+            "examples": ["event"]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The `id` the resource had. It will not be reused.",
+            "examples": ["0f1d2c3b-4a59-4e6d-8b7c-1a2b3c4d5e6f"]
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When it was deleted. What `?since=` filters on here."
+          }
+        }
+      },
+      "EventSatellite": {
+        "type": "object",
+        "description": "The transmitting satellite, as embedded in an event.",
+        "required": ["norad_id", "name", "alternate_name"],
+        "properties": {
+          "norad_id": {
+            "type": "integer",
+            "examples": [25544]
+          },
+          "name": {
+            "type": "string",
+            "examples": ["ISS"]
+          },
+          "alternate_name": {
+            "type": ["string", "null"],
+            "examples": ["ZARYA"]
+          }
+        }
+      },
+      "Operator": {
+        "type": "object",
+        "description": "The organisation running the transmission, with its logo for display.",
+        "required": ["slug", "name", "url", "logo_url"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Stable lowercase identifier, safe in a URL.",
+            "examples": ["ariss"]
+          },
+          "name": {
+            "type": "string",
+            "examples": ["ARISS"]
+          },
+          "url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "The organisation's own page, null when it has none."
+          },
+          "logo_url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "Public URL of the logo, null when none has been uploaded."
+          }
+        }
+      },
+      "CatalogueOperator": {
+        "type": "object",
+        "required": ["slug", "name", "url", "logo_url", "created_at", "updated_at"],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Stable public identifier, safe in a URL. It does not change.",
+            "examples": ["ariss"]
+          },
+          "name": {
+            "type": "string",
+            "examples": ["ARISS"]
+          },
+          "url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "The organisation's own page, null when it has none."
+          },
+          "logo_url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "Public URL of the logo, null when there is none."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Mode": {
+        "type": "string",
+        "description": "An SSTV mode, as the database spells it.",
+        "enum": [
+          "Robot 36",
+          "Robot 72",
+          "Martin 1",
+          "Martin 2",
+          "Scottie 1",
+          "Scottie 2",
+          "Scottie DX",
+          "PD50",
+          "PD90",
+          "PD120",
+          "PD160",
+          "PD180",
+          "PD240"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "required": [
+          "id",
+          "satellite",
+          "operator",
+          "start_time",
+          "end_time",
+          "frequency_mhz",
+          "transmit_power_watts",
+          "mode",
+          "title",
+          "image_url",
+          "image_interval_seconds",
+          "source_url",
+          "cancelled_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable identifier of the event."
+          },
+          "satellite": {
+            "$ref": "#/components/schemas/EventSatellite"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/Operator",
+            "description": "Who runs this transmission. Always present: the database requires it of every event, so a client never has to handle its absence."
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the transmission, UTC."
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the transmission, UTC. Always after `start_time`."
+          },
+          "frequency_mhz": {
+            "type": "number",
+            "description": "Downlink frequency in MHz.",
+            "examples": [145.8]
+          },
+          "transmit_power_watts": {
+            "type": ["number", "null"],
+            "description": "Downlink power in watts when the announcement gives it: 10 for the ISS, less for most cubesats. Null when it does not say.",
+            "examples": [10]
+          },
+          "mode": {
+            "$ref": "#/components/schemas/Mode"
+          },
+          "title": {
+            "type": ["string", "null"],
+            "description": "The title of the event, null when none was given."
+          },
+          "image_url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "Public URL of artwork for the event. Falls back to the operator's logo when the event has no artwork of its own."
+          },
+          "image_interval_seconds": {
+            "type": ["integer", "null"],
+            "description": "The quiet gap between one image and the next: the “two minutes off” of an announcement. How long an image itself takes is set by `mode` and not by the event: Robot 36 takes about 36 seconds, PD120 about 120. So the period from one image to the next is this value plus the mode's own frame time. Null when the announcement does not say."
+          },
+          "source_url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "The announcement this event was taken from, so it can be checked. Null when none was recorded."
+          },
+          "cancelled_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "When the transmission was called off. Null means it stands. A cancelled event keeps its row so that clients which cached it learn of the cancellation."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the event was added to the catalogue."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the event last changed. Pass the largest value you hold as `since`."
+          }
+        }
+      },
+      "Page": {
+        "type": "object",
+        "description": "Common envelope of the list endpoints.",
+        "required": ["count", "limit", "offset", "next", "previous", "license"],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Total rows matching the filters, before `limit` and `offset`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "The page size that was applied."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "The offset that was applied."
+          },
+          "next": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "Absolute URL of the next page, null on the last one. Carries the other parameters."
+          },
+          "previous": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "Absolute URL of the previous page, null on the first one."
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          }
+        }
+      },
+      "EventList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": ["results"],
+            "properties": {
+              "results": {
+                "type": "array",
+                "description": "The requested page of events.",
+                "items": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "SatelliteList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": ["results"],
+            "properties": {
+              "results": {
+                "type": "array",
+                "description": "The requested page of satellites.",
+                "items": {
+                  "$ref": "#/components/schemas/Satellite"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OperatorList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": ["results"],
+            "properties": {
+              "results": {
+                "type": "array",
+                "description": "The requested page of operators.",
+                "items": {
+                  "$ref": "#/components/schemas/CatalogueOperator"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "DeletionList": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Page"
+          },
+          {
+            "type": "object",
+            "required": ["results"],
+            "properties": {
+              "results": {
+                "type": "array",
+                "description": "The requested page of deletions.",
+                "items": {
+                  "$ref": "#/components/schemas/Deletion"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "EventResource": {
+        "type": "object",
+        "required": ["data", "license"],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Event"
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          }
+        }
+      },
+      "SatelliteResource": {
+        "type": "object",
+        "required": ["data", "license"],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Satellite"
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          }
+        }
+      },
+      "OperatorResource": {
+        "type": "object",
+        "required": ["data", "license"],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CatalogueOperator"
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          }
+        }
+      },
+      "Index": {
+        "type": "object",
+        "required": ["name", "version", "documentation", "openapi", "license", "endpoints"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "examples": ["v1"]
+          },
+          "description": {
+            "type": "string"
+          },
+          "documentation": {
+            "type": "string",
+            "format": "uri"
+          },
+          "openapi": {
+            "type": "string",
+            "format": "uri"
+          },
+          "license": {
+            "$ref": "#/components/schemas/License"
+          },
+          "endpoints": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Endpoint URLs, with `{id}` and `{norad_id}` left as placeholders."
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status", "checked_at", "api_version", "catalogue"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok", "unavailable"]
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "api_version": {
+            "type": "string",
+            "examples": ["v1"]
+          },
+          "catalogue": {
+            "type": "object",
+            "required": ["reachable", "latency_ms"],
+            "properties": {
+              "reachable": {
+                "type": "boolean"
+              },
+              "latency_ms": {
+                "type": ["integer", "null"],
+                "description": "How long the catalogue took to answer, null when it did not."
+              }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message", "parameter", "request_id"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable machine-readable code. Branch on this, not on the message.",
+                "enum": [
+                  "invalid_status",
+                  "invalid_limit",
+                  "invalid_offset",
+                  "invalid_since",
+                  "invalid_start_after",
+                  "invalid_start_before",
+                  "invalid_norad_id",
+                  "invalid_operator",
+                  "invalid_mode",
+                  "invalid_cancelled",
+                  "invalid_id",
+                  "not_found",
+                  "rate_limited",
+                  "internal_error"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable description of what went wrong."
+              },
+              "parameter": {
+                "type": ["string", "null"],
+                "description": "The query or path parameter the failure is about, so a message can be put next to the field that caused it. Null where the failure is about the request as a whole, as a 404, a 429 and a 500 are.",
+                "examples": ["limit"]
+              },
+              "request_id": {
+                "type": "string",
+                "description": "The id of this request, also returned in the `X-Request-Id` header and written to the log line behind a 500. Quote it when reporting a failure. Send your own `X-Request-Id` and it is echoed back instead, so both sides name the request the same way.",
+                "examples": ["cdg1::iad1::7qf4k-1760704800000-0f1d2c3b4a59"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

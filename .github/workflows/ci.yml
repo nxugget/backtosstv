@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor package.json declares, which Vite sets, and current LTS.
+        node-version: ["20.19", "22"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      # `lint` and `typecheck` run `next typegen` first: PageProps, LayoutProps and RouteContext are
+      # generated from the route tree, so without it both fail on a fresh checkout.
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run format:check
+
+      - run: npm test
+
+      # No Supabase credentials: the build only prerenders the pages that do not read the database.
+      - run: npm run build
+
+  # The dependencies that reach production, checked against the advisory database on every push.
+  # Not the dev dependencies: ESLint pulls in a `braces` advisory with no patched release, which
+  # SECURITY.md says is not a vulnerability here and which would turn this step into noise that
+  # gets ignored. `--audit-level=high` for the same reason.
+  #
+  # No `npm ci`: the audit reads the lockfile, so this job installs nothing.
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - run: npm audit --omit=dev --audit-level=high
+
+  schema:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # Builds the schema from the migrations on an empty database and asserts what it must
+      # guarantee: that the anonymous role cannot reach the catalogue, that an administrator can,
+      # that the bounds hold, and that the audit columns cannot be forged. No Supabase needed:
+      # supabase/tests/00-platform.sql recreates the few platform objects the migrations lean on.
+      - run: bash scripts/test-schema.sh
+        env:
+          DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres

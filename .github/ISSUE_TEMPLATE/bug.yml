@@ -1,0 +1,40 @@
+name: Report a bug
+description: Something in the API, the site or the admin does not work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a **vulnerability**, do not use this form. See
+        [SECURITY.md](https://github.com/nxugget/backtosstv/blob/main/SECURITY.md).
+
+        For a **wrong or missing SSTV event**, use the event report form instead: the data is not a
+        bug in the code.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: >
+        For the API, the request is usually enough. Paste the `curl`, and the response if you have
+        it.
+      placeholder: |
+        curl -i "https://backtosstv.org/api/v1/events?status=live"
+    validations:
+      required: true
+
+  - type: input
+    id: context
+    attributes:
+      label: Where
+      description: Browser and version, or the client library, or just "the API".
+    validations:
+      required: false

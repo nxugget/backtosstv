@@ -1,0 +1,5 @@
+.next
+node_modules
+package-lock.json
+# next dev regenerates the nextjs-agent-rules block verbatim, so Prettier and it would fight.
+AGENTS.md

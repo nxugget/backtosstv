@@ -1,0 +1,11 @@
+# The repository stores LF and Prettier enforces LF (`endOfLine: "lf"` in .prettierrc.json).
+# Keep checkouts LF on every platform so `npm run format:check` agrees everywhere.
+* text=auto eol=lf
+
+# Binary files must never be normalized.
+*.ttf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
