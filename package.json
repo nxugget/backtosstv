@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typegen": "next typegen",
+    "generate:globe-dots": "node scripts/generate-globe-dots.mjs",
     "lint": "next typegen && eslint . --max-warnings 0",
     "lint:fix": "next typegen && eslint . --fix",
     "typecheck": "next typegen && tsc --noEmit",

@@ -1,12 +1,13 @@
 "use client";
 
-import { geoBounds, geoGraticule, geoOrthographic, geoPath } from "d3-geo";
+import { geoGraticule, geoOrthographic, geoPath } from "d3-geo";
 import { useEffect, useMemo, useRef } from "react";
 import { eciToGeodetic, gstime, propagate, twoline2satrec, type SatRec } from "satellite.js";
 import { feature } from "topojson-client";
 import type { Topology } from "topojson-specification";
 import landTopology from "world-atlas/land-110m.json";
 
+import globeDots from "@/lib/globe-dots.json";
 import type { GlobeSatellite } from "@/lib/globe";
 
 interface DottedGlobeProps {
@@ -19,10 +20,6 @@ interface DottedGlobeProps {
   /** Called when a marker is clicked, with the next selection (null toggles it off). */
   onSatelliteSelect?: (noradId: number | null) => void;
 }
-
-/** Degrees of lat/lon between dots. The attachment's 16 with this step looks right at 110m. */
-const DOT_SPACING = 16;
-const DOT_STEP = DOT_SPACING * 0.08;
 
 const RIM_COLOR = "#d65a3e";
 const GRATICULE_COLOR = "rgba(232, 220, 195, 0.16)";
@@ -85,37 +82,7 @@ export function DottedGlobe({
     ) as unknown as GeoJSON.FeatureCollection<GeoJSON.Geometry | null>;
   }, []);
 
-  const dots = useMemo(() => {
-    if (land === null) {
-      return [];
-    }
-
-    const result: LandDot[] = [];
-
-    for (const entry of land.features) {
-      const geometry = entry.geometry;
-
-      if (geometry === null) {
-        continue;
-      }
-
-      const bounds = geoBounds(geometry);
-      const minLng = bounds[0][0];
-      const minLat = bounds[0][1];
-      const maxLng = bounds[1][0];
-      const maxLat = bounds[1][1];
-
-      for (let lng = minLng; lng <= maxLng; lng += DOT_STEP) {
-        for (let lat = minLat; lat <= maxLat; lat += DOT_STEP) {
-          if (pointInGeometry([lng, lat], geometry)) {
-            result.push({ lat, lng });
-          }
-        }
-      }
-    }
-
-    return result;
-  }, [land]);
+  const dots: readonly LandDot[] = globeDots.dots;
 
   const positioned = useMemo(() => {
     const result: PositionedSatellite[] = [];
@@ -560,59 +527,4 @@ function drawOrbitTrack(
 
   context.stroke();
   context.restore();
-}
-
-function pointInGeometry(point: [number, number], geometry: GeoJSON.Geometry): boolean {
-  if (geometry.type === "Polygon") {
-    return pointInPolygon(point, geometry.coordinates);
-  }
-
-  if (geometry.type === "MultiPolygon") {
-    return geometry.coordinates.some((polygon) => pointInPolygon(point, polygon));
-  }
-
-  return false;
-}
-
-/** Outer ring minus any holes, as a point-in-polygon test in lon/lat space. */
-function pointInPolygon(point: [number, number], rings: number[][][]): boolean {
-  const outer = rings[0];
-
-  if (outer === undefined || !pointInRing(point, outer)) {
-    return false;
-  }
-
-  for (let index = 1; index < rings.length; index += 1) {
-    const hole = rings[index];
-
-    if (hole !== undefined && pointInRing(point, hole)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function pointInRing([x, y]: [number, number], ring: number[][]): boolean {
-  let inside = false;
-
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const current = ring[i];
-    const previous = ring[j];
-
-    if (current === undefined || previous === undefined) {
-      continue;
-    }
-
-    const xi = current[0] ?? 0;
-    const yi = current[1] ?? 0;
-    const xj = previous[0] ?? 0;
-    const yj = previous[1] ?? 0;
-
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
 }
