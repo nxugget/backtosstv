@@ -1,0 +1,44 @@
+SSTV event data licence
+=======================
+
+This file covers the DATA served by the BackToSSTV API: the events, the
+satellites and everything the catalogue holds. The source code is covered
+separately by the MIT licence in LICENSE.
+
+Copyright (c) 2026 F4MDX and the BackToSSTV contributors.
+
+The data is licensed under the Creative Commons Attribution 4.0
+International licence (CC BY 4.0).
+
+  SPDX-License-Identifier: CC-BY-4.0
+  Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+  Full legal code:        https://creativecommons.org/licenses/by/4.0/legalcode
+
+The licence applies by reference: the text at the URL above is the
+authoritative version, and nothing in this file modifies it.
+
+
+What that means in practice
+---------------------------
+
+You may copy, redistribute, remix and build on the data, for any purpose
+including a commercial one, provided you give appropriate credit, link to
+the licence, and say if you changed anything.
+
+Credit that satisfies the licence:
+
+  SSTV event data from BackToSSTV (https://backtosstv.org),
+  licensed CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+
+Every API response repeats these terms in its `license` object and in a
+`Link: <https://creativecommons.org/licenses/by/4.0/>; rel="license"`
+header, so an integration never has to go looking for them.
+
+The catalogue exists because people read announcements from AMSAT, ARISS,
+clubs and operators, and check them by hand before publishing. Attribution
+is what sends the next reader back to that work, which is why it is a
+condition of use and not a courtesy.
+
+Where the data describes facts (a frequency, a date, a NORAD number),
+those facts are not owned by anyone. What this licence covers is the
+catalogue: the selection, the verification and the arrangement of them.

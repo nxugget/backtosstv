@@ -1,0 +1,39 @@
+# Local stack for `supabase start` and `supabase db reset`. The hosted project is linked with
+# `supabase link --project-ref johbtzniovlbntcsuhdk`, which writes its own .temp files, ignored here.
+#
+# Only the keys this project depends on are set, so the defaults of a newer CLI keep applying to
+# everything else. Passkeys are a dashboard-only setting on the hosted project and have no
+# equivalent here, which is why local sign-in uses the bootstrap password flow.
+
+project_id = "backtosstv"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+# The API clamps its own page size to 100; this is the ceiling behind it.
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000"]
+
+[auth.email]
+# Administrators are created by the invite flow with a temporary password, never by email.
+enable_signup = false
+enable_confirmations = false
+
+[storage]
+enabled = true
+file_size_limit = "5MiB"

@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+@theme {
+  --color-void: #100f0d;
+  --color-shell: #171512;
+  --color-panel: #201c18;
+  --color-earth: #211b16;
+  --color-archive: #171512;
+  --color-edge: #51463a;
+  --color-edge-soft: #342e27;
+  --color-ink: #e8dcc3;
+  --color-ink-dim: #b3a48a;
+  --color-ink-faint: #786d5d;
+  --color-signal: #d65a3e;
+  --color-signal-bright: #ed7955;
+  --color-signal-deep: #8f3829;
+  /* Status only. The site speaks in amber; green here is not decoration, it is the convention a
+     reader already knows, and an orange UP badge makes somebody look twice to be sure. */
+  --color-ok: #5f9e6a;
+  --color-ok-deep: #33583c;
+}
+
+@theme inline {
+  --font-body: var(--font-dotgothic16);
+  --font-heading: var(--font-sixtyfour);
+  --font-mono: var(--font-dotgothic16);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-void);
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-void);
+    background-image: radial-gradient(ellipse at 50% 0%, rgb(214 90 62 / 7%), transparent 55%);
+    color: var(--color-ink);
+    font-family: var(--font-body), sans-serif;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.14;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* The admin screens opt out: grain over a working surface costs legibility and earns nothing. */
+  body:has(.shack-surface)::after {
+    display: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading), monospace;
+    /* Sixtyfour has a single weight; ignore weight classes so the browser does not fake a bold. */
+    font-weight: 400 !important;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: var(--color-signal);
+    color: var(--color-void);
+  }
+}
+
+.retro-kicker {
+  color: var(--color-signal-bright);
+  font-family: var(--font-heading), monospace;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.retro-image-placeholder {
+  background-color: var(--color-shell);
+  background-image: radial-gradient(circle at center, rgb(214 90 62 / 13%), transparent 48%);
+}
+
+.retro-image-placeholder::before {
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgb(214 90 62 / 32%);
+  content: "";
+  pointer-events: none;
+}
+
+@keyframes retro-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 14px currentColor;
+  }
+  50% {
+    opacity: 0.55;
+    text-shadow: 0 0 4px currentColor;
+  }
+}
+
+.retro-pulse {
+  animation: retro-pulse 1.6s ease-in-out infinite;
+}
+
+@layer utilities {
+  [class*="rounded-"]:not([class~="rounded-full"]) {
+    border-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

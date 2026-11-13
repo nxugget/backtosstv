@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/nxugget/backtosstv/security/advisories/new
+    about: Privately, never in a public issue.
+  - name: Using the API in something you built
+    url: https://github.com/nxugget/backtosstv/blob/main/docs/terms.md
+    about: The terms, the credit line, and how to be a good client.
